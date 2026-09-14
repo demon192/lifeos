@@ -92,7 +92,7 @@ MacBook
 
 ## 6. MILESTONE ROADMAP (never break a working slice)
 
-- [~] **M1 — Vertical slice plumbing.** CameraX opens → point at text → ML Kit OCR → raw text on screen. No AI, no storage. *Proves the hard plumbing.* **CODE SCAFFOLDED (2026-09-14) — awaiting first build on the Mac.** See §8 below.
+- [x] **M1 — Vertical slice plumbing.** CameraX opens → point at text → ML Kit OCR → raw text on screen. No AI, no storage. *Proves the hard plumbing.* **✅ VERIFIED ON DEVICE (2026-09-14)** — live OCR reading text on the iQOO Z7 Pro. See §8 below.
 - [ ] **M2 — Understanding.** OCR text → Gemma 3 1B → `{amount, due_date}` LifeEvent JSON → display nicely.
 - [ ] **M3 — Action (COMPLETE DEMOABLE PRODUCT).** "Remind me 2 days before" button → WorkManager schedules a real notification.
 - [ ] **M4 — Memory + query.** Save LifeEvents to Room → NL query "what do I owe this week?" answered from stored data.
