@@ -72,16 +72,23 @@ class GemmaEngine private constructor(private val llm: LlmInference) {
      * one tiny example so the shape is unambiguous.
      */
     private fun buildPrompt(ocrText: String): String = """
-        You extract structured data from a scanned bill or notice. Read the text below and return
-        ONLY a JSON object, no explanation, with exactly these keys:
-        "type" (short label like "electricity_bill", or null),
-        "biller" (company/sender name, or null),
-        "amount" (amount due as digits only, e.g. "1240", or null),
-        "due_date" (in YYYY-MM-DD format, or null).
-        Use null when a value is not present. Do not guess.
+        You read a scanned bill, invoice, or receipt and extract key facts.
+        Return ONLY a JSON object — no explanation, no markdown — with exactly these keys:
+        "type"     : short label like "electricity_bill" or "restaurant_receipt", or null
+        "biller"   : the business or company NAME (usually the largest text at the top), or null
+        "amount"   : the total to pay or paid, KEEP the decimals, no currency symbol,
+                     e.g. "54.50" or "1240.00", or null
+        "due_date" : the payment due date as YYYY-MM-DD, ONLY if the document explicitly states one.
+                     A receipt that is already paid has NO due date -> null.
+                     Never turn a transaction/issue/print date into a due date.
 
-        Example output:
-        {"type":"electricity_bill","biller":"BSES Rajdhani","amount":"1240","due_date":"2026-09-20"}
+        Rules: use null when a value is not stated. Never guess or invent a value.
+
+        Example 1 (electricity bill, has a due date):
+        {"type":"electricity_bill","biller":"BSES Rajdhani","amount":"1240.00","due_date":"2026-09-20"}
+
+        Example 2 (paid restaurant receipt, no due date):
+        {"type":"restaurant_receipt","biller":"Cafe Central","amount":"54.50","due_date":null}
 
         Text:
         ""${'"'}
