@@ -93,7 +93,7 @@ MacBook
 ## 6. MILESTONE ROADMAP (never break a working slice)
 
 - [x] **M1 — Vertical slice plumbing.** CameraX opens → point at text → ML Kit OCR → raw text on screen. No AI, no storage. *Proves the hard plumbing.* **✅ VERIFIED ON DEVICE (2026-09-14)** — live OCR reading text on the iQOO Z7 Pro. See §8 below.
-- [~] **M2 — Understanding.** OCR text → Gemma 3 1B → `{amount, due_date}` LifeEvent JSON → display nicely. **CODE SCAFFOLDED (2026-09-14)** — needs the model file (see §10) + a build. Capture button freezes OCR text → Gemma → result card.
+- [x] **M2 — Understanding.** OCR text → Gemma 3 1B → `{amount, due_date}` LifeEvent JSON → display nicely. **✅ PIPELINE VERIFIED ON DEVICE (2026-09-14)** — first-run model download + on-device Gemma inference + result card all working on the iQOO Z7 Pro. Extraction *quality* is being tuned (a 1B model; foreign-language restaurant receipt was a hard out-of-domain case — invented a due date, mangled the amount). Prompt hardened (keep decimals, teach `due_date:null` for paid receipts). **Demo target = English electricity bill**, the tuned case. Next quality lever if needed: low-temperature session API for determinism.
 - [ ] **M3 — Action (COMPLETE DEMOABLE PRODUCT).** "Remind me 2 days before" button → WorkManager schedules a real notification.
 - [ ] **M4 — Memory + query.** Save LifeEvents to Room → NL query "what do I owe this week?" answered from stored data.
 - [ ] **M5 — Voice.** SpeechRecognizer input for capture + queries.
