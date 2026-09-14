@@ -45,6 +45,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
     // Compose — pull the BOM first, then the libraries without versions
     implementation(platform(libs.androidx.compose.bom))
@@ -63,4 +64,7 @@ dependencies {
     // ML Kit OCR + permission helper
     implementation(libs.mlkit.text.recognition)
     implementation(libs.accompanist.permissions)
+
+    // On-device LLM (Gemma via MediaPipe)
+    implementation(libs.mediapipe.tasks.genai)
 }

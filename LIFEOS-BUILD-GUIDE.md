@@ -93,7 +93,7 @@ MacBook
 ## 6. MILESTONE ROADMAP (never break a working slice)
 
 - [x] **M1 — Vertical slice plumbing.** CameraX opens → point at text → ML Kit OCR → raw text on screen. No AI, no storage. *Proves the hard plumbing.* **✅ VERIFIED ON DEVICE (2026-09-14)** — live OCR reading text on the iQOO Z7 Pro. See §8 below.
-- [ ] **M2 — Understanding.** OCR text → Gemma 3 1B → `{amount, due_date}` LifeEvent JSON → display nicely.
+- [~] **M2 — Understanding.** OCR text → Gemma 3 1B → `{amount, due_date}` LifeEvent JSON → display nicely. **CODE SCAFFOLDED (2026-09-14)** — needs the model file (see §10) + a build. Capture button freezes OCR text → Gemma → result card.
 - [ ] **M3 — Action (COMPLETE DEMOABLE PRODUCT).** "Remind me 2 days before" button → WorkManager schedules a real notification.
 - [ ] **M4 — Memory + query.** Save LifeEvents to Room → NL query "what do I owe this week?" answered from stored data.
 - [ ] **M5 — Voice.** SpeechRecognizer input for capture + queries.
@@ -159,3 +159,38 @@ two, updating live as you move the phone. Send back a screenshot + any Logcat `F
 - No medical diagnosis, no payment execution, no silent data sharing.
 - Minimize cognitive load: `POINT → UNDERSTAND → CONFIRM → DONE`. No dashboards/long forms/notification spam.
 - Non-goals for MVP: payments, banking, WhatsApp/email integration, smart-home, multi-agent, 3D UI, Kubernetes, multi-user infra.
+
+---
+
+## 10. GETTING THE GEMMA MODEL (one-time human step for M2)
+
+The app runs **Gemma 3 1B (INT4)** on-device via MediaPipe. The model file is ~555 MB — too big to
+put in the APK or in git — so it must get onto the phone one of two ways. **Do this once.**
+
+**Model file:** `gemma3-1b-it-int4.task` (555 MB), from HuggingFace `litert-community/Gemma3-1B-IT`.
+That repo is **gated** (Gemma license) — you must be logged in and accept the terms to download.
+
+### Option A — Normal path: download-on-first-run (what end users/judges get)
+1. On huggingface.co, open `litert-community/Gemma3-1B-IT`, sign in, **accept the license**.
+2. Download **`gemma3-1b-it-int4.task`** (the 555 MB one).
+3. Upload it as a **GitHub Release asset** on this repo:
+   `github.com/demon192/lifeos` → Releases → Draft a new release → tag e.g. `model-v1` →
+   drag the `.task` file into the assets box → Publish. (Assets can be up to 2 GB, public, no auth.)
+4. Copy the asset's download URL (`…/releases/download/model-v1/gemma3-1b-it-int4.task`) and paste
+   it into `MODEL_URL` in [`ModelManager.kt`](app/src/main/java/com/lifeos/app/ModelManager.kt).
+5. Build & run. On first launch the app downloads the model (progress bar), then works offline forever.
+
+### Option B — Dev shortcut: adb push (fastest for testing, no upload needed)
+Skip the URL entirely — push the file straight to the phone once:
+```bash
+adb shell mkdir -p /data/local/tmp/llm
+adb push gemma3-1b-it-int4.task /data/local/tmp/llm/gemma3-1b-it-int4.task
+```
+The app checks that path first and uses it automatically. **Note:** you must redo this on the
+**loaner phone** at the event. For the actual demo, Option A is safer (nothing to set up on stage).
+
+### If it doesn't load
+- App says "no model / no URL": you skipped both options, or `MODEL_URL` is still blank.
+- Crash in `createFromOptions` mentioning tokens/context: tweak `MAX_TOKENS` in
+  [`GemmaEngine.kt`](app/src/main/java/com/lifeos/app/GemmaEngine.kt) (see the comment there).
+- Send back the Logcat `FATAL` block.

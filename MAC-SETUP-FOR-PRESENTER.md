@@ -96,6 +96,16 @@ git pull
 ```
 Then press **▶ Run** again. That's the whole loop.
 
+### 5. Milestone 2 needs the AI model on the phone (one-time)
+From M2 on, the app uses an on-device AI model (~555 MB) that isn't in the code. Fastest for
+testing: `adb push` it once (see **§10 of the build guide** for where to get the file):
+```bash
+adb shell mkdir -p /data/local/tmp/llm
+adb push gemma3-1b-it-int4.task /data/local/tmp/llm/gemma3-1b-it-int4.task
+```
+The app finds it there automatically. (For the real demo we instead host it so the app downloads
+it on first run — also in §10.) **Redo the push on the loaner phone at the event.**
+
 ---
 
 ## If something breaks — what to send back

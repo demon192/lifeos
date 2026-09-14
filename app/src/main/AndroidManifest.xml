@@ -4,6 +4,9 @@
     <!-- We need the camera to "see" documents. -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- Only used ONCE, to download the Gemma model on first run. After that the app is offline. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Declare that we use a camera, but don't REQUIRE it (so the app still installs on
          devices/emulators without one). All our target phones have cameras. -->
     <uses-feature
