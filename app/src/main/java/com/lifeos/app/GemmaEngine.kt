@@ -32,6 +32,15 @@ class GemmaEngine private constructor(private val llm: LlmInference) {
         // step is to switch to the LlmInferenceSession API and set a low temperature there.
         private const val TOP_K = 40
 
+        // Hard cap on how much OCR text we feed the model. MediaPipe treats setMaxTokens as the
+        // TOTAL context (input + output); if the input ALONE blows past it, the native library
+        // CRASHES THE WHOLE APP — a hard process death, NOT a catchable Kotlin exception. A dense
+        // bill photographed as a sharp still can OCR into thousands of characters, so we must trim.
+        // ~2000 chars ≈ 500–650 tokens, well under MAX_TOKENS with room for the reply. The key
+        // fields (biller/amount/due date) are usually near the top of a bill anyway. If a bill's
+        // total gets cut off, raise this AND MAX_TOKENS together.
+        private const val MAX_OCR_CHARS = 2000
+
         /**
          * Loads the model from [modelPath] and builds the engine. Blocking — call off-main.
          * Throws if the model is missing/incompatible; the caller turns that into a UI error.
@@ -53,10 +62,11 @@ class GemmaEngine private constructor(private val llm: LlmInference) {
      * for a bad model reply, so the UI can degrade gracefully per the brief's guardrails.
      */
     fun extract(ocrText: String): LifeEvent {
-        val prompt = buildPrompt(ocrText)
+        val trimmed = ocrText.take(MAX_OCR_CHARS) // guard against a native context-overflow crash
+        val prompt = buildPrompt(trimmed)
         return try {
             val reply = llm.generateResponse(prompt)
-            Log.d(TAG, "Model reply: $reply")
+            Log.d(TAG, "OCR chars=${ocrText.length} (using ${trimmed.length}); model reply: $reply")
             LifeEvent.fromModelJson(reply, rawText = ocrText)
         } catch (e: Exception) {
             Log.e(TAG, "Inference failed", e)

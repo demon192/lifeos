@@ -12,8 +12,10 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,13 +44,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -58,6 +66,8 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import kotlin.math.max
+import kotlin.math.min
 
 private const val TAG = "LifeOS-Camera"
 
@@ -70,8 +80,8 @@ private val Teal = Color(0xFF7FE3E1)
  * The main LifeOS screen.
  *
  * M1: camera + live OCR.
- * M2: a Capture button takes a still photo, you confirm it (Retake / Use), and only then does the
- *     app OCR that sharp still and run Gemma on it — turning the document into a structured card.
+ * M2: Capture takes a still photo → you can drag to crop it → confirm (Retake / Use & understand)
+ *     → only then does the app OCR that (cropped) still and run Gemma → structured result card.
  */
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -113,7 +123,7 @@ private fun CameraContent(
     // Live OCR readout (M1 feel) — purely informational now; extraction uses the frozen photo.
     var recognizedText by remember { mutableStateOf("") }
 
-    // The frozen still photo awaiting Retake / Use. Null = live camera is showing.
+    // The frozen still photo awaiting crop/confirm. Null = live camera is showing.
     var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
     // CameraX still-capture use case. Built once here, bound inside CameraPreview, fired by Capture.
@@ -128,6 +138,9 @@ private fun CameraContent(
         viewModel.scanAgain()
     }
 
+    val bmp = capturedBitmap
+    val inCropStage = captureState is CaptureState.Idle && bmp != null
+
     Box(modifier = modifier.fillMaxSize()) {
         // The live camera preview always runs underneath everything.
         CameraPreview(
@@ -136,69 +149,74 @@ private fun CameraContent(
             modifier = Modifier.fillMaxSize(),
         )
 
-        // Once a photo is frozen, show it on top of the live preview for the whole
-        // confirm → extract → result flow, so the user always sees what was analysed.
-        capturedBitmap?.let { bmp ->
-            Image(
-                bitmap = bmp.asImageBitmap(),
-                contentDescription = "Captured document",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Ink),
-            )
+        when {
+            // 1) Live: frame the bill, then Capture takes a still photo.
+            captureState is CaptureState.Idle && bmp == null -> {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth(),
+                ) {
+                    LivePanel(
+                        recognizedText = recognizedText,
+                        modelReady = modelState == ModelStatus.Ready,
+                        onCapture = {
+                            takePhoto(
+                                imageCapture = imageCapture,
+                                executor = ContextCompat.getMainExecutor(context),
+                                onCaptured = { capturedBitmap = it },
+                            )
+                        },
+                    )
+                }
+            }
+
+            // 2) Frozen photo: drag to crop (optional), then confirm.
+            inCropStage -> {
+                CropStage(
+                    bitmap = bmp!!,
+                    onRetake = { capturedBitmap = null },
+                    onUse = { cropped ->
+                        capturedBitmap = cropped // show exactly what we analysed
+                        viewModel.onPhotoConfirmed(cropped)
+                    },
+                )
+            }
+
+            // 3) Extracting / Result / Error: keep the frozen photo behind the panel.
+            else -> {
+                bmp?.let {
+                    Image(
+                        bitmap = it.asImageBitmap(),
+                        contentDescription = "Captured document",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Ink),
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth(),
+                ) {
+                    when (val s = captureState) {
+                        is CaptureState.Extracting -> ThinkingPanel()
+                        is CaptureState.Result -> ResultCard(event = s.event, onScanAgain = resetToLive)
+                        is CaptureState.Error -> ErrorPanel(message = s.message, onScanAgain = resetToLive)
+                        is CaptureState.Idle -> Unit // handled above
+                    }
+                }
+            }
         }
 
-        // Top banner: model download / readiness status.
+        // Top banner: model download / readiness status (hidden once Ready).
         ModelBanner(
             state = modelState,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth(),
         )
-
-        // Bottom area changes with the capture flow.
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth(),
-        ) {
-            when (val s = captureState) {
-                is CaptureState.Idle ->
-                    if (capturedBitmap == null) {
-                        // Live: frame the bill, then Capture takes a still photo.
-                        LivePanel(
-                            recognizedText = recognizedText,
-                            modelReady = modelState == ModelStatus.Ready,
-                            onCapture = {
-                                takePhoto(
-                                    imageCapture = imageCapture,
-                                    executor = ContextCompat.getMainExecutor(context),
-                                    onCaptured = { capturedBitmap = it },
-                                )
-                            },
-                        )
-                    } else {
-                        // A photo is frozen: confirm it (Use) or discard it (Retake).
-                        ConfirmPanel(
-                            onRetake = { capturedBitmap = null },
-                            onUse = { capturedBitmap?.let { viewModel.onPhotoConfirmed(it) } },
-                        )
-                    }
-
-                is CaptureState.Extracting -> ThinkingPanel()
-
-                is CaptureState.Result -> ResultCard(
-                    event = s.event,
-                    onScanAgain = resetToLive,
-                )
-
-                is CaptureState.Error -> ErrorPanel(
-                    message = s.message,
-                    onScanAgain = resetToLive,
-                )
-            }
-        }
     }
 }
 
@@ -288,29 +306,89 @@ private fun LivePanel(
     }
 }
 
-/** Confirm state: a still photo is frozen; keep it (Use) or discard it (Retake). */
+/**
+ * Confirm stage: shows the frozen still full-screen. The user can drag one finger across the photo
+ * to draw a crop rectangle (optional); we then crop to that region before OCR. Retake discards.
+ */
 @Composable
-private fun ConfirmPanel(onRetake: () -> Unit, onUse: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(PanelBg)
-            .padding(16.dp),
-    ) {
-        Text("Use this photo?", color = Teal, style = MaterialTheme.typography.labelMedium)
-        Text(
-            "Check the whole bill is sharp and readable — clear photos give far better results.",
-            color = Color.White,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+private fun CropStage(
+    bitmap: Bitmap,
+    onRetake: () -> Unit,
+    onUse: (Bitmap) -> Unit,
+) {
+    // Size of the on-screen image area, in pixels — needed to map touch points to bitmap pixels.
+    var viewSize by remember { mutableStateOf(IntSize.Zero) }
+    // Drag selection, in the same pixel space as viewSize. Null until the user drags.
+    var dragStart by remember { mutableStateOf<Offset?>(null) }
+    var dragEnd by remember { mutableStateOf<Offset?>(null) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = "Captured document — drag to crop",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Ink)
+                .onSizeChanged { viewSize = it }
+                .pointerInput(bitmap) {
+                    detectDragGestures(
+                        onDragStart = { start ->
+                            dragStart = start
+                            dragEnd = start
+                        },
+                        onDrag = { change, _ ->
+                            change.consume()
+                            dragEnd = change.position
+                        },
+                    )
+                },
         )
-        Row(modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = onRetake, modifier = Modifier.weight(1f)) {
-                Text("Retake")
+
+        // Draw the selection rectangle while/after dragging.
+        val s = dragStart
+        val e = dragEnd
+        if (s != null && e != null) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val left = min(s.x, e.x)
+                val top = min(s.y, e.y)
+                val w = kotlin.math.abs(e.x - s.x)
+                val h = kotlin.math.abs(e.y - s.y)
+                drawRect(
+                    color = Teal,
+                    topLeft = Offset(left, top),
+                    size = Size(w, h),
+                    style = Stroke(width = 3.dp.toPx()),
+                )
             }
-            Spacer(Modifier.width(12.dp))
-            Button(onClick = onUse, modifier = Modifier.weight(1f)) {
-                Text("Use & understand")
+        }
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(PanelBg)
+                .padding(16.dp),
+        ) {
+            Text("Use this photo?", color = Teal, style = MaterialTheme.typography.labelMedium)
+            Text(
+                "Drag across the photo to crop to just the bill (optional). Clear, tight photos " +
+                    "read far better.",
+                color = Color.White,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+            )
+            Row(modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = onRetake, modifier = Modifier.weight(1f)) {
+                    Text("Retake")
+                }
+                Spacer(Modifier.width(12.dp))
+                Button(
+                    onClick = { onUse(cropBitmap(bitmap, viewSize, dragStart, dragEnd)) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Use & understand")
+                }
             }
         }
     }
@@ -426,6 +504,48 @@ private fun ErrorPanel(message: String, onScanAgain: () -> Unit) {
 }
 
 /**
+ * Crop [bmp] to the drag selection. Coordinates come in as on-screen pixels ([viewSize] space);
+ * we map them to bitmap pixels accounting for ContentScale.Fit letterboxing. Returns the FULL
+ * bitmap if there's no meaningful selection. Heavily clamped + try/catch so it can never crash.
+ */
+private fun cropBitmap(
+    bmp: Bitmap,
+    viewSize: IntSize,
+    start: Offset?,
+    end: Offset?,
+): Bitmap {
+    if (start == null || end == null || viewSize.width == 0 || viewSize.height == 0) return bmp
+
+    val left = min(start.x, end.x)
+    val top = min(start.y, end.y)
+    val right = max(start.x, end.x)
+    val bottom = max(start.y, end.y)
+    // Ignore accidental taps / tiny selections — use the whole photo instead.
+    if (right - left < 40f || bottom - top < 40f) return bmp
+
+    // ContentScale.Fit: the image is scaled uniformly and centered (letterboxed).
+    val scale = min(viewSize.width.toFloat() / bmp.width, viewSize.height.toFloat() / bmp.height)
+    val dispW = bmp.width * scale
+    val dispH = bmp.height * scale
+    val offX = (viewSize.width - dispW) / 2f
+    val offY = (viewSize.height - dispH) / 2f
+
+    fun toPixelX(x: Float) = ((x - offX) / scale).coerceIn(0f, bmp.width.toFloat())
+    fun toPixelY(y: Float) = ((y - offY) / scale).coerceIn(0f, bmp.height.toFloat())
+
+    return try {
+        val px = toPixelX(left).toInt()
+        val py = toPixelY(top).toInt()
+        val pw = (toPixelX(right) - px).toInt().coerceIn(1, bmp.width - px)
+        val ph = (toPixelY(bottom) - py).toInt().coerceIn(1, bmp.height - py)
+        if (pw <= 1 || ph <= 1) bmp else Bitmap.createBitmap(bmp, px, py, pw, ph)
+    } catch (t: Throwable) {
+        Log.e(TAG, "Crop failed; using full image", t)
+        bmp
+    }
+}
+
+/**
  * Fire a single still capture. The result comes back on [executor]; we rotate it upright and hand
  * the bitmap back via [onCaptured]. Called from the Capture button.
  */
@@ -438,9 +558,13 @@ private fun takePhoto(
         executor,
         object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
-                val bitmap = image.toUprightBitmap()
-                image.close()
-                onCaptured(bitmap)
+                try {
+                    onCaptured(image.toUprightBitmap())
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Failed to convert captured image", t)
+                } finally {
+                    image.close()
+                }
             }
 
             override fun onError(exc: ImageCaptureException) {
