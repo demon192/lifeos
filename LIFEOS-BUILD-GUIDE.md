@@ -85,7 +85,7 @@ MacBook
 ## 5. WORKFLOW
 
 - **Claude Code runs on the user's Windows machine** (`C:\Users\I769271`). Code is written here.
-- **Push to GitLab** → presenter **pulls on MacBook Pro** → builds in **Android Studio** → **sideloads APK to phone** → tests → reports back (screenshots, error text, logcat).
+- **Push to GitHub** (`https://github.com/demon192/lifeos.git`) → presenter **pulls on MacBook Pro** → builds in **Android Studio** → **sideloads APK to phone** → tests → reports back (screenshots, error text, logcat).
 - **Claude cannot build/run the app on Windows** (no Android SDK/device here). **The presenter's test run is the first real execution.** Clear, detailed feedback from the presenter is the lifeline.
 
 ---
@@ -106,7 +106,7 @@ MacBook
 
 ## 7. OPEN ITEMS — NEEDED TO START CODING
 
-1. **GitLab repo URL** (or a chosen name so structure can be laid out and connected). *(Structure is now laid out locally; still need the remote URL to push.)*
+1. **GitLab repo URL** (or a chosen name so structure can be laid out and connected). *(RESOLVED: repo is on **GitHub** → `https://github.com/demon192/lifeos.git`. M1 pushed to `main` on 2026-09-14.)*
 2. **Mac readiness:** presenter has **Android Studio + JDK 17** installed, and can sideload an APK? *(Answered: not confirmed → see `MAC-SETUP-FOR-PRESENTER.md`, send it to the presenter.)*
 3. (Nice to have) Re-confirm pre-building is allowed with organizers.
 

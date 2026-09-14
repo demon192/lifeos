@@ -73,10 +73,9 @@ On the phone: **Settings → About phone → Software version** (Funtouch OS put
 
 ### 1. Get the code
 ```bash
-git clone <GITLAB_REPO_URL>
+git clone https://github.com/demon192/lifeos.git LifeOS
 cd LifeOS
 ```
-(The repo URL is still TBD — see the build guide's Open Items. Once it exists, paste it here.)
 
 ### 2. Open it
 - Android Studio → **Open** → pick the `LifeOS` folder (the one with `settings.gradle.kts` inside).
