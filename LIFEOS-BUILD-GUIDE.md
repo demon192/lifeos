@@ -167,18 +167,24 @@ two, updating live as you move the phone. Send back a screenshot + any Logcat `F
 The app runs **Gemma 3 1B (INT4)** on-device via MediaPipe. The model file is ~555 MB — too big to
 put in the APK or in git — so it must get onto the phone one of two ways. **Do this once.**
 
-**Model file:** `gemma3-1b-it-int4.task` (555 MB), from HuggingFace `litert-community/Gemma3-1B-IT`.
-That repo is **gated** (Gemma license) — you must be logged in and accept the terms to download.
+**Model file:** `gemma3-1b-it-int4.task` (555 MB), Gemma 3 1B INT4, MediaPipe `.task` format.
 
-### Option A — Normal path: download-on-first-run (what end users/judges get)
-1. On huggingface.co, open `litert-community/Gemma3-1B-IT`, sign in, **accept the license**.
-2. Download **`gemma3-1b-it-int4.task`** (the 555 MB one).
-3. Upload it as a **GitHub Release asset** on this repo:
-   `github.com/demon192/lifeos` → Releases → Draft a new release → tag e.g. `model-v1` →
-   drag the `.task` file into the assets box → Publish. (Assets can be up to 2 GB, public, no auth.)
-4. Copy the asset's download URL (`…/releases/download/model-v1/gemma3-1b-it-int4.task`) and paste
-   it into `MODEL_URL` in [`ModelManager.kt`](app/src/main/java/com/lifeos/app/ModelManager.kt).
-5. Build & run. On first launch the app downloads the model (progress bar), then works offline forever.
+### Option A — Normal path: download-on-first-run (what end users/judges get) ✅ WIRED UP
+`MODEL_URL` in [`ModelManager.kt`](app/src/main/java/com/lifeos/app/ModelManager.kt) is already set to a
+**public, ungated** re-host (verified 2026-09-14, ~555 MB, no login):
+`https://huggingface.co/AfiOne/gemma3-1b-it-int4.task/resolve/main/gemma3-1b-it-int4.task`
+So on first launch the app downloads the model (progress bar), then works offline forever.
+Nothing to set up — just build & run.
+
+> **⚠️ HuggingFace URL gotcha (this bit people):** a download URL must use **`/resolve/`**, not
+> **`/blob/`**. A `/blob/` link returns the *web page* for the file, so the app saves a few-KB HTML
+> file instead of the 555 MB model — you'll see a "file too small / corrupt" failure. Always
+> `/resolve/main/<filename>`.
+
+If you'd rather host your own copy (e.g. the original **gated** `litert-community/Gemma3-1B-IT`):
+accept the Gemma license on HF while logged in, download the 555 MB `gemma3-1b-it-int4.task`, upload
+it as a **GitHub Release asset** on `github.com/demon192/lifeos` (Releases → Draft → drag the file →
+Publish; up to 2 GB, public, no auth), then paste its `…/releases/download/<tag>/…` URL into `MODEL_URL`.
 
 ### Option B — Dev shortcut: adb push (fastest for testing, no upload needed)
 Skip the URL entirely — push the file straight to the phone once:

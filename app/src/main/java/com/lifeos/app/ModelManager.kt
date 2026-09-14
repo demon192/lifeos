@@ -36,12 +36,13 @@ class ModelManager(private val context: Context) {
         private const val EXPECTED_MIN_BYTES = 400_000_000L
 
         /**
-         * TODO(setup): paste the public download URL of the model here.
-         * Recommended: upload gemma3-1b-it-int4.task as a GitHub Release asset on the lifeos repo,
-         * then use its "…/releases/download/<tag>/gemma3-1b-it-int4.task" URL. See build guide §10.
-         * Leave blank to rely solely on the adb-push dev shortcut.
+         * Public download URL of the model. MUST be a HuggingFace "/resolve/" URL (the actual
+         * file), NOT a "/blob/" URL (that returns the HTML web page → a tiny corrupt download).
+         * This AfiOne re-host is public/ungated (verified 2026-09-14), so first-run download works
+         * with no login. Alternative: a GitHub Release asset on the lifeos repo. See build guide §10.
          */
-        const val MODEL_URL = ""
+        const val MODEL_URL =
+            "https://huggingface.co/AfiOne/gemma3-1b-it-int4.task/resolve/main/gemma3-1b-it-int4.task"
 
         /** Where the presenter can `adb push` the model for the dev shortcut. */
         private const val ADB_DEV_PATH = "/data/local/tmp/llm/$MODEL_FILE_NAME"
