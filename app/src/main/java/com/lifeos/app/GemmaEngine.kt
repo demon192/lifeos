@@ -75,20 +75,19 @@ class GemmaEngine private constructor(private val llm: LlmInference) {
         You read a scanned bill, invoice, or receipt and extract key facts.
         Return ONLY a JSON object — no explanation, no markdown — with exactly these keys:
         "type"     : short label like "electricity_bill" or "restaurant_receipt", or null
-        "biller"   : the business or company NAME (usually the largest text at the top), or null
-        "amount"   : the total to pay or paid, KEEP the decimals, no currency symbol,
-                     e.g. "54.50" or "1240.00", or null
-        "due_date" : the payment due date as YYYY-MM-DD, ONLY if the document explicitly states one.
-                     A receipt that is already paid has NO due date -> null.
-                     Never turn a transaction/issue/print date into a due date.
+        "biller"   : the company/business NAME issuing it (usually the bold title at the very top), or null
+        "amount"   : the FINAL total to pay. Look for "Total Payable", "Amount Due", or
+                     "Current Payable Amount" — ignore individual line items. Keep decimals,
+                     no currency symbol. Or null.
+        "due_date" : payment due date as YYYY-MM-DD. Look for "Due Date" or "Bill Due Date".
+                     If none is stated (e.g. an already-paid receipt), use null. Never use an
+                     issue, print, or transaction date as the due date.
 
-        Rules: use null when a value is not stated. Never guess or invent a value.
+        Rules: use null when a value is not stated. Never guess. The two examples show the JSON
+        FORMAT only — read the ACTUAL text below and do NOT copy the example values.
 
-        Example 1 (electricity bill, has a due date):
-        {"type":"electricity_bill","biller":"BSES Rajdhani","amount":"1240.00","due_date":"2026-09-20"}
-
-        Example 2 (paid restaurant receipt, no due date):
-        {"type":"restaurant_receipt","biller":"Cafe Central","amount":"54.50","due_date":null}
+        Example 1: {"type":"electricity_bill","biller":"Adani Electricity","amount":"845.50","due_date":"2026-10-05"}
+        Example 2: {"type":"restaurant_receipt","biller":"Cafe Central","amount":"54.50","due_date":null}
 
         Text:
         ""${'"'}

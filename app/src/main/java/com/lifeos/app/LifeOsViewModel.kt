@@ -1,6 +1,7 @@
 package com.lifeos.app
 
 import android.app.Application
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -48,11 +49,11 @@ class LifeOsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Called when the user taps Capture with a frozen OCR snapshot. Loads the engine if needed,
-     * then runs extraction on a background thread and publishes the result.
+     * Called when the user confirms a frozen photo (taps "Use & understand"). We OCR the still
+     * photo (sharper than live frames → better text), then run Gemma on that text, all off the
+     * main thread. The Gemma engine is loaded once and reused.
      */
-    fun onCapture(ocrSnapshot: String) {
-        if (ocrSnapshot.isBlank()) return
+    fun onPhotoConfirmed(bitmap: Bitmap) {
         if (_modelState.value != ModelStatus.Ready) {
             _captureState.value = CaptureState.Error("The AI model isn't ready yet.")
             return
@@ -61,12 +62,20 @@ class LifeOsViewModel(app: Application) : AndroidViewModel(app) {
         _captureState.value = CaptureState.Extracting
         viewModelScope.launch {
             try {
-                val result = withContext(Dispatchers.IO) {
+                val event = withContext(Dispatchers.IO) {
+                    // 1) OCR the sharp still photo.
+                    val text = StillImageOcr.recognizeBlocking(bitmap)
+                    if (text.isBlank()) return@withContext null
+                    // 2) Load Gemma once, reuse, and extract structured fields.
                     val e = engine ?: GemmaEngine.create(getApplication(), modelManager.modelPath())
                         .also { engine = it }
-                    e.extract(ocrSnapshot)
+                    e.extract(text)
                 }
-                _captureState.value = CaptureState.Result(result)
+                _captureState.value = if (event == null) {
+                    CaptureState.Error("Couldn't read any text from that photo. Retake it closer and steadier.")
+                } else {
+                    CaptureState.Result(event)
+                }
             } catch (t: Throwable) {
                 Log.e("LifeOS-VM", "Capture/extract failed", t)
                 _captureState.value = CaptureState.Error(t.message ?: "Something went wrong.")

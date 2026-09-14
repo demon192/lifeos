@@ -1,12 +1,18 @@
 package com.lifeos.app
 
 import android.Manifest
+import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.util.Log
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -36,6 +43,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +56,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
 private const val TAG = "LifeOS-Camera"
@@ -59,8 +69,9 @@ private val Teal = Color(0xFF7FE3E1)
 /**
  * The main LifeOS screen.
  *
- * M1: camera + live OCR (still here).
- * M2: a Capture button freezes the OCR text and Gemma turns it into a structured result card.
+ * M1: camera + live OCR.
+ * M2: a Capture button takes a still photo, you confirm it (Retake / Use), and only then does the
+ *     app OCR that sharp still and run Gemma on it — turning the document into a structured card.
  */
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
@@ -97,18 +108,46 @@ private fun CameraContent(
     modifier: Modifier = Modifier,
     viewModel: LifeOsViewModel = viewModel(),
 ) {
-    // Latest live OCR text (M1 behaviour). This is the snapshot we freeze on Capture.
+    val context = LocalContext.current
+
+    // Live OCR readout (M1 feel) — purely informational now; extraction uses the frozen photo.
     var recognizedText by remember { mutableStateOf("") }
+
+    // The frozen still photo awaiting Retake / Use. Null = live camera is showing.
+    var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    // CameraX still-capture use case. Built once here, bound inside CameraPreview, fired by Capture.
+    val imageCapture = remember { ImageCapture.Builder().build() }
 
     val modelState by viewModel.modelState.collectAsState()
     val captureState by viewModel.captureState.collectAsState()
 
+    // Go back to a fresh live scan (used by "Scan again"): drop the photo AND reset the flow state.
+    val resetToLive = {
+        capturedBitmap = null
+        viewModel.scanAgain()
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
-        // The camera preview always runs underneath everything.
+        // The live camera preview always runs underneath everything.
         CameraPreview(
+            imageCapture = imageCapture,
             onTextFound = { text -> recognizedText = text },
             modifier = Modifier.fillMaxSize(),
         )
+
+        // Once a photo is frozen, show it on top of the live preview for the whole
+        // confirm → extract → result flow, so the user always sees what was analysed.
+        capturedBitmap?.let { bmp ->
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = "Captured document",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Ink),
+            )
+        }
 
         // Top banner: model download / readiness status.
         ModelBanner(
@@ -125,22 +164,38 @@ private fun CameraContent(
                 .fillMaxWidth(),
         ) {
             when (val s = captureState) {
-                is CaptureState.Idle -> LivePanel(
-                    recognizedText = recognizedText,
-                    modelReady = modelState == ModelStatus.Ready,
-                    onCapture = { viewModel.onCapture(recognizedText) },
-                )
+                is CaptureState.Idle ->
+                    if (capturedBitmap == null) {
+                        // Live: frame the bill, then Capture takes a still photo.
+                        LivePanel(
+                            recognizedText = recognizedText,
+                            modelReady = modelState == ModelStatus.Ready,
+                            onCapture = {
+                                takePhoto(
+                                    imageCapture = imageCapture,
+                                    executor = ContextCompat.getMainExecutor(context),
+                                    onCaptured = { capturedBitmap = it },
+                                )
+                            },
+                        )
+                    } else {
+                        // A photo is frozen: confirm it (Use) or discard it (Retake).
+                        ConfirmPanel(
+                            onRetake = { capturedBitmap = null },
+                            onUse = { capturedBitmap?.let { viewModel.onPhotoConfirmed(it) } },
+                        )
+                    }
 
                 is CaptureState.Extracting -> ThinkingPanel()
 
                 is CaptureState.Result -> ResultCard(
                     event = s.event,
-                    onScanAgain = viewModel::scanAgain,
+                    onScanAgain = resetToLive,
                 )
 
                 is CaptureState.Error -> ErrorPanel(
                     message = s.message,
-                    onScanAgain = viewModel::scanAgain,
+                    onScanAgain = resetToLive,
                 )
             }
         }
@@ -195,7 +250,7 @@ private fun Banner(modifier: Modifier, text: String) {
     }
 }
 
-/** Idle state: live OCR readout + the Capture button. */
+/** Idle/live state: small live OCR readout + the Capture button that takes a still photo. */
 @Composable
 private fun LivePanel(
     recognizedText: String,
@@ -209,31 +264,59 @@ private fun LivePanel(
             .padding(16.dp),
     ) {
         Text(
-            text = "Reading (live, on-device):",
+            text = "Point at a bill, then Capture:",
             color = Teal,
             style = MaterialTheme.typography.labelMedium,
         )
         Text(
-            text = recognizedText.ifBlank { "Point the camera at a bill…" },
+            text = recognizedText.ifBlank { "Live preview…" },
             color = Color.White,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 140.dp)
+                .heightIn(max = 100.dp)
                 .verticalScroll(rememberScrollState())
                 .padding(vertical = 8.dp),
         )
         Button(
             onClick = onCapture,
-            enabled = modelReady && recognizedText.isNotBlank(),
+            enabled = modelReady,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(if (modelReady) "Capture & understand" else "Preparing AI…")
+            Text(if (modelReady) "Capture" else "Preparing AI…")
         }
     }
 }
 
-/** Extracting state: Gemma is thinking. */
+/** Confirm state: a still photo is frozen; keep it (Use) or discard it (Retake). */
+@Composable
+private fun ConfirmPanel(onRetake: () -> Unit, onUse: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(PanelBg)
+            .padding(16.dp),
+    ) {
+        Text("Use this photo?", color = Teal, style = MaterialTheme.typography.labelMedium)
+        Text(
+            "Check the whole bill is sharp and readable — clear photos give far better results.",
+            color = Color.White,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+        )
+        Row(modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = onRetake, modifier = Modifier.weight(1f)) {
+                Text("Retake")
+            }
+            Spacer(Modifier.width(12.dp))
+            Button(onClick = onUse, modifier = Modifier.weight(1f)) {
+                Text("Use & understand")
+            }
+        }
+    }
+}
+
+/** Extracting state: OCR + Gemma are working. */
 @Composable
 private fun ThinkingPanel() {
     Column(
@@ -320,7 +403,7 @@ private fun Field(label: String, value: String?) {
     }
 }
 
-/** Error state. Camera stays live behind it; user can just scan again. */
+/** Error state. The frozen photo stays behind it; user can just scan again. */
 @Composable
 private fun ErrorPanel(message: String, onScanAgain: () -> Unit) {
     Column(
@@ -343,11 +426,46 @@ private fun ErrorPanel(message: String, onScanAgain: () -> Unit) {
 }
 
 /**
- * Wraps CameraX inside Compose (unchanged from M1): a live [Preview] plus an [ImageAnalysis]
- * stream feeding each frame to [TextAnalyzer] for OCR.
+ * Fire a single still capture. The result comes back on [executor]; we rotate it upright and hand
+ * the bitmap back via [onCaptured]. Called from the Capture button.
+ */
+private fun takePhoto(
+    imageCapture: ImageCapture,
+    executor: Executor,
+    onCaptured: (Bitmap) -> Unit,
+) {
+    imageCapture.takePicture(
+        executor,
+        object : ImageCapture.OnImageCapturedCallback() {
+            override fun onCaptureSuccess(image: ImageProxy) {
+                val bitmap = image.toUprightBitmap()
+                image.close()
+                onCaptured(bitmap)
+            }
+
+            override fun onError(exc: ImageCaptureException) {
+                Log.e(TAG, "takePicture failed", exc)
+            }
+        },
+    )
+}
+
+/** Convert a captured [ImageProxy] to a Bitmap that is rotated the right way up. */
+private fun ImageProxy.toUprightBitmap(): Bitmap {
+    val raw = toBitmap()
+    val degrees = imageInfo.rotationDegrees
+    if (degrees == 0) return raw
+    val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
+    return Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
+}
+
+/**
+ * Wraps CameraX inside Compose: a live [Preview], an [ImageAnalysis] stream feeding each frame to
+ * [TextAnalyzer] for the live OCR readout, and the [imageCapture] use case for taking still photos.
  */
 @Composable
 private fun CameraPreview(
+    imageCapture: ImageCapture,
     onTextFound: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -383,6 +501,7 @@ private fun CameraPreview(
                         CameraSelector.DEFAULT_BACK_CAMERA,
                         preview,
                         imageAnalysis,
+                        imageCapture,
                     )
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to bind camera use-cases", e)
