@@ -65,8 +65,9 @@ class GemmaEngine private constructor(private val llm: LlmInference) {
         val trimmed = ocrText.take(MAX_OCR_CHARS) // guard against a native context-overflow crash
         val prompt = buildPrompt(trimmed)
         return try {
+            Log.i(TAG, "Running inference (ocr chars=${ocrText.length}, using ${trimmed.length})")
             val reply = llm.generateResponse(prompt)
-            Log.d(TAG, "OCR chars=${ocrText.length} (using ${trimmed.length}); model reply: $reply")
+            Log.d(TAG, "Model reply: $reply")
             LifeEvent.fromModelJson(reply, rawText = ocrText)
         } catch (e: Exception) {
             Log.e(TAG, "Inference failed", e)

@@ -71,6 +71,9 @@ import kotlin.math.min
 
 private const val TAG = "LifeOS-Camera"
 
+/** Longest-edge cap for the captured photo, in px. Keeps memory low so Gemma's GPU alloc succeeds. */
+private const val MAX_CAPTURE_DIM = 1600
+
 // Shared colors for the overlays.
 private val Ink = Color(0xFF0B0F14)
 private val PanelBg = Color(0xCC0B0F14) // semi-transparent ink
@@ -574,13 +577,30 @@ private fun takePhoto(
     )
 }
 
-/** Convert a captured [ImageProxy] to a Bitmap that is rotated the right way up. */
+/**
+ * Convert a captured [ImageProxy] to a Bitmap that is rotated the right way up AND shrunk to a
+ * sane size. Full-res capture is ~12 MP (~48 MB in memory); holding that while MediaPipe allocates
+ * ~1 GB of GPU memory for Gemma can crash the native layer. 1600 px on the long edge is plenty for
+ * OCR of a bill and keeps memory small.
+ */
 private fun ImageProxy.toUprightBitmap(): Bitmap {
     val raw = toBitmap()
     val degrees = imageInfo.rotationDegrees
-    if (degrees == 0) return raw
-    val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
-    return Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
+    val upright = if (degrees == 0) {
+        raw
+    } else {
+        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
+        Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
+    }
+    return upright.downscaledTo(MAX_CAPTURE_DIM)
+}
+
+/** Scale a bitmap down so its longest edge is at most [maxDim] px. Returns it unchanged if smaller. */
+private fun Bitmap.downscaledTo(maxDim: Int): Bitmap {
+    val longest = max(width, height)
+    if (longest <= maxDim) return this
+    val scale = maxDim.toFloat() / longest
+    return Bitmap.createScaledBitmap(this, (width * scale).toInt(), (height * scale).toInt(), true)
 }
 
 /**
