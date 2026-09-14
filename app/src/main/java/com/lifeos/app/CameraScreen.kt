@@ -71,8 +71,21 @@ import kotlin.math.min
 
 private const val TAG = "LifeOS-Camera"
 
-/** Longest-edge cap for the captured photo, in px. Keeps memory low so Gemma's GPU alloc succeeds. */
-private const val MAX_CAPTURE_DIM = 1600
+/**
+ * Longest-edge cap for the captured photo, in px.
+ *
+ * This used to be 1600 — set low back when we (wrongly) suspected the "Use & understand" crash was
+ * GPU/memory pressure. The logcat later proved the crash was a TOKEN-BUDGET overflow inside
+ * MediaPipe (fixed in GemmaEngine), NOT memory. So shrinking the photo this hard was buying us
+ * nothing on stability while WRECKING OCR: a dense bill's tiny table text needs pixels, and 1600 px
+ * turned "Fixed Demand Charges" into "Exed Demand Charges". Gemma can't extract from garbled OCR.
+ *
+ * 3000 px keeps small print legible to ML Kit while still capping a ~12 MP capture to a sane
+ * in-memory size (~a single ~25 MB bitmap on an 8 GB phone — fine; Gemma only ever gets TEXT, never
+ * the bitmap). If OCR of dense bills is still weak, the next lever is filling the frame with the
+ * bill (get closer / go landscape) and using the crop.
+ */
+private const val MAX_CAPTURE_DIM = 3000
 
 // Shared colors for the overlays.
 private val Ink = Color(0xFF0B0F14)
@@ -578,10 +591,11 @@ private fun takePhoto(
 }
 
 /**
- * Convert a captured [ImageProxy] to a Bitmap that is rotated the right way up AND shrunk to a
- * sane size. Full-res capture is ~12 MP (~48 MB in memory); holding that while MediaPipe allocates
- * ~1 GB of GPU memory for Gemma can crash the native layer. 1600 px on the long edge is plenty for
- * OCR of a bill and keeps memory small.
+ * Convert a captured [ImageProxy] to a Bitmap that is rotated the right way up AND capped to a sane
+ * size. We keep the resolution HIGH ([MAX_CAPTURE_DIM] = 3000 px) because OCR of dense bills lives
+ * or dies on pixel detail — the earlier 1600 px cap was a memory-crash guess that turned out wrong
+ * (the crash was token overflow, fixed in GemmaEngine). Gemma only receives the OCR'd text, never
+ * this bitmap, so the higher resolution costs us nothing at inference time.
  */
 private fun ImageProxy.toUprightBitmap(): Bitmap {
     val raw = toBitmap()
