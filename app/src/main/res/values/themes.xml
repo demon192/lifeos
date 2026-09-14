@@ -1,0 +1,8 @@
+<resources>
+    <!-- Base app theme. Compose does its own theming inside the app; this XML theme just
+         gives the app window a sane starting point (no old-style action bar). -->
+    <style name="Theme.LifeOS" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/lifeos_ink</item>
+        <item name="android:statusBarColor">@color/lifeos_ink</item>
+    </style>
+</resources>

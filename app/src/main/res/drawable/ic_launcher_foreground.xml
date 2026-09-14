@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simple "eye" glyph on the teal background — LifeOS "sees" the world.
+     108x108 viewport is the adaptive-icon standard; art stays inside the safe center. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,38 C40,38 30,54 30,54 C30,54 40,70 54,70 C68,70 78,54 78,54 C78,54 68,38 54,38 Z M54,46 A8,8 0 1 1 54,62 A8,8 0 1 1 54,46 Z" />
+</vector>

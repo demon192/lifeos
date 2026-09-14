@@ -1,0 +1,15 @@
+# Android / Gradle build outputs
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+
+# Keep the Gradle wrapper jar out of ignore — it SHOULD be committed once generated:
+!gradle/wrapper/gradle-wrapper.jar
