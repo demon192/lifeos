@@ -21,11 +21,16 @@ class GemmaEngine private constructor(private val llm: LlmInference) {
         private const val TAG = "LifeOS-Gemma"
 
         // ── Inference knobs ─────────────────────────────────────────────────────────────────
-        // maxTokens is the MOST LIKELY thing to need tuning: the MediaPipe docs note Gemma3-1B
-        // requires this to fit the model's built-in context size. If createFromOptions() throws
-        // about token/context size on the phone, adjust this first. 1280 matches the common
-        // Gemma3-1B .task context.
-        private const val MAX_TOKENS = 1280
+        // maxTokens is the TOTAL token budget: input tokens + output tokens must BOTH fit under
+        // it. This is not a soft limit — if the input alone reaches it, MediaPipe logs OUT_OF_RANGE
+        // and the native library CRASHES THE WHOLE APP (SIGSEGV), which Kotlin cannot catch.
+        //
+        // We learned this the hard way: at 1280 a dense bill's prompt tokenized to 1294 tokens —
+        // already OVER budget, with zero room left for a reply — and the app died on "Use &
+        // understand". Gemma3-1B supports a larger context, so we raise this to 2048 to leave
+        // generous headroom for the JSON reply. If createFromOptions() ever throws about context
+        // size on a specific device, lower this (and MAX_OCR_CHARS with it).
+        private const val MAX_TOKENS = 2048
         // topK limits sampling; a smallish value keeps extraction focused. We only set the
         // options that the tasks-genai 0.10.x LlmInferenceOptions builder reliably exposes
         // (model path, max tokens, max topK). If extraction comes out too "creative", the next
@@ -34,12 +39,18 @@ class GemmaEngine private constructor(private val llm: LlmInference) {
 
         // Hard cap on how much OCR text we feed the model. MediaPipe treats setMaxTokens as the
         // TOTAL context (input + output); if the input ALONE blows past it, the native library
-        // CRASHES THE WHOLE APP — a hard process death, NOT a catchable Kotlin exception. A dense
-        // bill photographed as a sharp still can OCR into thousands of characters, so we must trim.
-        // ~2000 chars ≈ 500–650 tokens, well under MAX_TOKENS with room for the reply. The key
-        // fields (biller/amount/due date) are usually near the top of a bill anyway. If a bill's
-        // total gets cut off, raise this AND MAX_TOKENS together.
-        private const val MAX_OCR_CHARS = 2000
+        // CRASHES THE WHOLE APP — a hard process death, NOT a catchable Kotlin exception.
+        //
+        // The trap: BILLS ARE NUMBER-DENSE, and numbers tokenize into MANY more tokens per
+        // character than ordinary prose. Our old estimate ("2000 chars ≈ 500–650 tokens") was
+        // wrong for bills — 2000 chars of a real bill tokenized to ~1290 tokens and overflowed.
+        // So we cap conservatively: ~1200 chars keeps the input well under MAX_TOKENS even at
+        // bill token-density, leaving RESPONSE_TOKEN_BUDGET free for the reply. The key fields
+        // (biller/amount/due date) sit near the top of a bill anyway. If a bill's total gets cut
+        // off, raise this AND MAX_TOKENS together — never one without the other. (~1200 chars
+        // ≈ ~750 tokens; plus the fixed prompt that leaves ~1100 tokens of MAX_TOKENS free for
+        // Gemma's JSON reply.)
+        private const val MAX_OCR_CHARS = 1200
 
         /**
          * Loads the model from [modelPath] and builds the engine. Blocking — call off-main.
